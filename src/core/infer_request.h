@@ -194,6 +194,8 @@ class InferenceRequest {
     std::map<std::string, std::shared_ptr<Memory>> host_policy_data_map_;
   };
 
+  using OutputState = Input;
+
   // InferenceRequest
   //
   // The two constructors are identical except one takes backend as a
@@ -215,7 +217,9 @@ class InferenceRequest {
       InferenceBackend* backend, const int64_t requested_model_version)
       : needs_normalization_(true), backend_raw_(backend),
         requested_model_version_(requested_model_version), flags_(0),
-        correlation_id_(0), batch_size_(0), timeout_us_(0), collect_stats_(true)
+        correlation_id_(0), batch_size_(0), timeout_us_(0),
+        collect_stats_(true),
+        output_states_(new std::unordered_map<std::string, OutputState>())
   {
     SetPriority(0);
   }
@@ -296,6 +300,12 @@ class InferenceRequest {
     return override_inputs_;
   }
 
+  // Transfers the inference request's output states to the output_states
+  // argument provided.
+  Status TransferOutputStates(
+      std::shared_ptr<std::unordered_map<std::string, OutputState>>&
+          output_states);
+
   // Get an input taking into account both original inputs and
   // overrides. If an override input is available use it, otherwise
   // use the original input. Accessing inputs via this method is not
@@ -340,6 +350,14 @@ class InferenceRequest {
   Status AddOriginalInput(
       const std::string& name, const inference::DataType datatype,
       const std::vector<int64_t>& shape, Input** input = nullptr);
+
+  Status AddOutputState(
+      const std::string& name, const inference::DataType datatype,
+      const int64_t* shape, const uint64_t dim_count,
+      OutputState** output_state = nullptr);
+  Status AddOutputState(
+      const std::string& name, const inference::DataType datatype,
+      const std::vector<int64_t>& shape, OutputState** output_state = nullptr);
 
   // Remove a single original input or all inputs.
   Status RemoveOriginalInput(const std::string& name);
@@ -408,6 +426,14 @@ class InferenceRequest {
     response_delegator_ = std::move(delegator);
     return response_factory_.SetResponseDelegator(response_delegator_);
   }
+
+  void SetStateUpdateCallback(
+      std::function<Status(InferenceRequest* irequest)>&& state_update_cb)
+  {
+    state_update_cb_ = std::move(state_update_cb);
+  }
+
+  Status UpdateState() { return state_update_cb_(this); }
 
   // Prepare this request for inference.
   Status PrepareForInference();
@@ -558,6 +584,8 @@ class InferenceRequest {
   std::function<void(std::unique_ptr<InferenceResponse>&&, const uint32_t)>
       response_delegator_;
 
+  std::function<Status(InferenceRequest* irequest)> state_update_cb_;
+
   // The response factory associated with this request.
   InferenceResponseFactory response_factory_;
 
@@ -577,6 +605,7 @@ class InferenceRequest {
   // Inference trace associated with this request.
   std::unique_ptr<InferenceTrace> trace_;
 #endif  // TRITON_ENABLE_TRACING
+  std::shared_ptr<std::unordered_map<std::string, OutputState>> output_states_;
 };
 
 std::ostream& operator<<(std::ostream& out, const InferenceRequest& request);
