@@ -253,7 +253,7 @@ def core_cmake_args(components, backends, install_dir):
         cmake_enable(FLAGS.enable_gpu)))
     cargs.append('-DTRITON_MIN_COMPUTE_CAPABILITY={}'.format(
         FLAGS.min_compute_capability))
-    
+
     cargs.append('-DTRITON_ENABLE_MALI_GPU:BOOL={}'.format(
         cmake_enable(FLAGS.enable_mali_gpu)))
 
@@ -559,7 +559,7 @@ ARG TRITON_VERSION={}
 ARG TRITON_CONTAINER_VERSION={}
 ARG BASE_IMAGE={}
 '''.format(argmap['TRITON_VERSION'], argmap['TRITON_CONTAINER_VERSION'],
-           argmap['BASE_IMAGE'])
+           "ubuntu:18.04")
 
     df += '''
 FROM ${BASE_IMAGE}
@@ -618,10 +618,9 @@ RUN pip3 install --upgrade pip && \
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | \
       gpg --dearmor - |  \
       tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
-    apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main' && \
+    apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' && \
     apt-get update && \
-    apt-get install -y --no-install-recommends \
-      cmake-data=3.21.1-0kitware1ubuntu20.04.1 cmake=3.21.1-0kitware1ubuntu20.04.1
+    apt-get install -y --no-install-recommends cmake
 '''
 
     # Copy in the triton source. We remove existing contents first in
@@ -640,7 +639,8 @@ COPY . .
 ENTRYPOINT []
 '''
         if FLAGS.enable_gpu:
-            df += install_dcgm_libraries(argmap['DCGM_VERSION'], target_machine())
+            df += install_dcgm_libraries(argmap['DCGM_VERSION'],
+                                         target_machine())
 
     df += '''
 ENV TRITON_SERVER_VERSION ${TRITON_VERSION}
@@ -710,7 +710,8 @@ FROM ${{BASE_IMAGE}}
 '''.format(argmap['TRITON_VERSION'], argmap['TRITON_CONTAINER_VERSION'],
            argmap['BASE_IMAGE'])
 
-    df += dockerfile_prepare_container_linux(argmap, backends, FLAGS.enable_gpu, target_machine())
+    df += dockerfile_prepare_container_linux(argmap, backends, FLAGS.enable_gpu,
+                                             target_machine())
 
     df += '''
 WORKDIR /opt/tritonserver
@@ -754,7 +755,8 @@ COPY --chown=1000:1000 --from=tritonserver_build /workspace/build/sagemaker/serv
         dfile.write(df)
 
 
-def dockerfile_prepare_container_linux(argmap, backends, enable_gpu, target_machine):
+def dockerfile_prepare_container_linux(argmap, backends, enable_gpu,
+                                       target_machine):
     gpu_enabled = 1 if enable_gpu else 0
     # Common steps to produce docker images shared by build.py and compose.py.
     # Sets enviroment variables, installs dependencies and adds entrypoint
@@ -964,9 +966,7 @@ def container_build(images, backends, repoagents, endpoints):
     # Windows docker runs in a VM and memory needs to be specified
     # explicitly.
     if target_platform() == 'windows':
-        commonargs += [
-            '--memory', FLAGS.container_memory
-        ]
+        commonargs += ['--memory', FLAGS.container_memory]
 
     log_verbose('buildbase container {}'.format(commonargs + cachefromargs))
     create_dockerfile_buildbase(FLAGS.build_dir, 'Dockerfile.buildbase',
@@ -1033,9 +1033,7 @@ def container_build(images, backends, repoagents, endpoints):
         if target_platform() == 'windows':
             # Windows docker runs in a VM and memory needs to be
             # specified explicitly.
-            dockerrunargs += [
-                '--memory', FLAGS.container_memory
-            ]
+            dockerrunargs += ['--memory', FLAGS.container_memory]
             dockerrunargs += [
                 '-v', '\\\\.\pipe\docker_engine:\\\\.\pipe\docker_engine'
             ]
@@ -1145,7 +1143,8 @@ if __name__ == '__main__':
         '--container-memory',
         default="8g",
         required=False,
-        help='Value for Docker --memory argument. Used only for windows builds.')
+        help='Value for Docker --memory argument. Used only for windows builds.'
+    )
     parser.add_argument(
         '--target-platform',
         required=False,
