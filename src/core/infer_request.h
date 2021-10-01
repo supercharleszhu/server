@@ -35,6 +35,7 @@
 #include "src/core/memory.h"
 #include "src/core/model_config.h"
 #include "src/core/response_allocator.h"
+#include "src/core/sequence_state.h"
 #include "src/core/status.h"
 #include "src/core/tritonserver_apis.h"
 
@@ -194,27 +195,6 @@ class InferenceRequest {
     std::map<std::string, std::shared_ptr<Memory>> host_policy_data_map_;
   };
 
-  // State tensor
-  class State : public Input {
-   public:
-    using Input::Input;
-
-    // Set the state update callback.
-    void SetStateUpdateCallback(std::function<Status()>&& state_update_cb)
-    {
-      state_update_cb_ = std::move(state_update_cb);
-    }
-
-    // Call the state update callback. This function will be called when
-    // TRITONBACKEND_StateUpdate is called.
-    Status Update() { return state_update_cb_(); }
-
-   private:
-    std::function<Status()> state_update_cb_ = []() {
-      return Status::Success;
-    };
-  };
-
   // InferenceRequest
   //
   // The two constructors are identical except one takes backend as a
@@ -236,9 +216,7 @@ class InferenceRequest {
       InferenceBackend* backend, const int64_t requested_model_version)
       : needs_normalization_(true), backend_raw_(backend),
         requested_model_version_(requested_model_version), flags_(0),
-        correlation_id_(0), batch_size_(0), timeout_us_(0),
-        collect_stats_(true),
-        states_(new std::unordered_map<std::string, std::unique_ptr<State>>())
+        correlation_id_(0), batch_size_(0), timeout_us_(0), collect_stats_(true)
   {
     SetPriority(0);
   }
@@ -439,17 +417,9 @@ class InferenceRequest {
     return response_factory_.SetResponseDelegator(response_delegator_);
   }
 
-  void SetNextStateHolder(
-      std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<State>>>
-          next_state)
+  void SetSequenceState(std::shared_ptr<SequenceState> sequence_state)
   {
-    next_states_ = next_state;
-  }
-
-  std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<State>>>&
-  NextStateHolder()
-  {
-    return next_states_;
+    sequence_state_ = sequence_state;
   }
 
   // Prepare this request for inference.
@@ -621,13 +591,8 @@ class InferenceRequest {
   std::unique_ptr<InferenceTrace> trace_;
 #endif  // TRITON_ENABLE_TRACING
 
-  // A map storing the output states provided by the backend.
-  std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<State>>>
-      states_;
-
-  // The place where the next state should be stored.
-  std::shared_ptr<std::unordered_map<std::string, std::unique_ptr<State>>>
-      next_states_;
+  // Sequence I/O state used for implicit state management.
+  std::shared_ptr<SequenceState> sequence_state_;
 };
 
 std::ostream& operator<<(std::ostream& out, const InferenceRequest& request);
