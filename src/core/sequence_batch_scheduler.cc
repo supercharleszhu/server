@@ -1107,6 +1107,10 @@ DirectSequenceBatch::BatcherThread(const int nice)
                   batcher_idx_, seq_slot);
               seq_slot_correlation_ids_[seq_slot] =
                   base_->ReleaseSequenceSlot(batcher_seq_slot, &queue);
+
+              // The state for the sequence needs to be cleaned after the
+              // sequence slot is released.
+              states_[seq_slot] = nullptr;
             }
           }
 
@@ -1234,16 +1238,13 @@ DirectSequenceBatch::BatcherThread(const int nice)
             SetControlTensors(
                 irequest, seq_slot, seq_slot_correlation_ids_[seq_slot]);
 
+            // Update the implicit state and set the input state tensors.
+            UpdateImplicitState(irequest, seq_slot);
+
             if ((irequest->Flags() & TRITONSERVER_REQUEST_FLAG_SEQUENCE_END) !=
                 0) {
               end_of_sequence = true;
-            } else {
-              // Update the implicit state and set the input state tensors.
-              // The state update doesn't need to happen when the sequence is
-              // ending.
-              UpdateImplicitState(irequest, seq_slot);
             }
-
             curr_payload_->AddRequest(std::move(irequest));
 
             queue.pop_front();
@@ -1277,6 +1278,10 @@ DirectSequenceBatch::BatcherThread(const int nice)
                 batcher_idx_, seq_slot);
             seq_slot_correlation_ids_[seq_slot] =
                 base_->ReleaseSequenceSlot(batcher_seq_slot, &queue);
+
+            // The state for the sequence needs to be cleaned after the sequence
+            // slot is released.
+            states_[seq_slot] = nullptr;
           }
         }
       }
@@ -1411,13 +1416,13 @@ OldestSequenceBatch::CompleteAndNext(const uint32_t seq_slot)
                          << " in batcher " << batcher_idx_ << ", slot "
                          << seq_slot;
           release_seq_slot = true;
-        } else {
-          // Update the implicit state and set the input state tensors.
-          UpdateImplicitState(irequest, seq_slot);
         }
 
         // Add the appropriate control tensor values to the request.
         SetControlTensors(irequest, seq_slot, correlation_id);
+
+        // Update the implicit state and set the input state tensors.
+        UpdateImplicitState(irequest, seq_slot);
 
         LOG_VERBOSE(1) << "issue to dynamic batcher CORRID " << correlation_id
                        << " in batcher " << batcher_idx_ << ", slot "
@@ -1449,6 +1454,10 @@ OldestSequenceBatch::CompleteAndNext(const uint32_t seq_slot)
           batcher_idx_, seq_slot);
       const uint64_t released_cid =
           base_->ReleaseSequenceSlot(batcher_seq_slot, &queue);
+
+      // The state for the sequence needs to be cleaned after the sequence slot
+      // is released.
+      states_[seq_slot] = nullptr;
       if (released_cid != 0) {
         LOG_VERBOSE(1) << "Enqueued new sequence containing " << queue.size()
                        << " requests into OldestFirst batcher " << batcher_idx_
